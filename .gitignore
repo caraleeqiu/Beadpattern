@@ -1,5 +1,7 @@
 node_modules
 dist
+dist-single
+beadpattern-test.html
 .DS_Store
 *.log
 .vite
