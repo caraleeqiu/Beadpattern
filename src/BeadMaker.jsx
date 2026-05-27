@@ -119,6 +119,14 @@ const BRANDS = {
 function hexToRgb(hex) {
   return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
 }
+function isLight(hex) {
+  const [r,g,b] = hexToRgb(hex);
+  return (r*0.299 + g*0.587 + b*0.114) > 150;
+}
+function shortCode(c) {
+  // Strip palette prefix to fit inside a cell: "P01 · 80-19001" -> "P01"
+  return c.id;
+}
 function rgbToLab(r, g, b) {
   r /= 255; g /= 255; b /= 255;
   r = r > 0.04045 ? Math.pow((r+0.055)/1.055, 2.4) : r/12.92;
@@ -211,7 +219,8 @@ export default function BeadMaker() {
     reader.readAsDataURL(file);
   }, [brand, effectiveGridSize, process]);
 
-  const CELL = Math.max(4, Math.min(18, Math.floor(500 / Math.max(beadGrid?.w||effectiveGridSize, beadGrid?.h||effectiveGridSize))));
+  const CELL = 18; // fixed cell size so color codes stay readable; container scrolls
+  const AXIS = 22; // px reserved around the grid for row/column number labels
   const totalBeads = colorStats.reduce((s,{count})=>s+count,0);
   // Board boundary info for SVG overlay
   const currentSizeSpec = BRANDS[brand].sizes.find(s => s.mm === beadMm) || BRANDS[brand].sizes[0];
@@ -475,96 +484,15 @@ export default function BeadMaker() {
                   对齐底板边界
                 </div>
               </div>
-              <div style={{
-                background:"rgba(255,255,255,.03)", borderRadius:16,
-                padding:16, overflow:"auto", marginBottom:16,
-                border:"1px solid #1e1e2e",
-              }}>
-                <svg width={displayGrid.w*CELL} height={displayGrid.h*CELL} style={{display:"block"}}>
-                  {/* Padding area (empty board space) */}
-                  {snapToBoard && displayGrid.origW && (
-                    <>
-                      <rect
-                        x={displayGrid.origW*CELL} y={0}
-                        width={(displayGrid.w - displayGrid.origW)*CELL}
-                        height={displayGrid.h*CELL}
-                        fill="rgba(255,217,61,.04)"
-                        stroke="none"
-                      />
-                      <rect
-                        x={0} y={displayGrid.origH*CELL}
-                        width={displayGrid.w*CELL}
-                        height={(displayGrid.h - displayGrid.origH)*CELL}
-                        fill="rgba(255,217,61,.04)"
-                        stroke="none"
-                      />
-                    </>
-                  )}
-
-                  {/* Fine grid lines */}
-                  {Array.from({length:displayGrid.h+1},(_,i)=>(
-                    <line key={`h${i}`} x1={0} y1={i*CELL} x2={displayGrid.w*CELL} y2={i*CELL}
-                      stroke="rgba(255,255,255,.06)" strokeWidth={.4}/>
-                  ))}
-                  {Array.from({length:displayGrid.w+1},(_,i)=>(
-                    <line key={`v${i}`} x1={i*CELL} y1={0} x2={i*CELL} y2={displayGrid.h*CELL}
-                      stroke="rgba(255,255,255,.06)" strokeWidth={.4}/>
-                  ))}
-
-                  {/* Beads */}
-                  {displayGrid.grid.map((row,y)=>row.map((cell,x)=>
-                    cell ? (
-                      <circle key={`${x}-${y}`}
-                        cx={x*CELL+CELL/2} cy={y*CELL+CELL/2} r={CELL/2-.8}
-                        fill={cell.hex} stroke="rgba(0,0,0,.35)" strokeWidth={.6}
-                      />
-                    ) : null
-                  ))}
-
-                  {/* Board boundary lines — vertical */}
-                  {Array.from({length: Math.ceil(displayGrid.w / svgBoardPegs) + 1}, (_,i) => {
-                    const x = i * svgBoardPegs * CELL;
-                    if (x > displayGrid.w * CELL + 1) return null;
-                    return (
-                      <line key={`bv${i}`}
-                        x1={x} y1={0} x2={x} y2={displayGrid.h*CELL}
-                        stroke="#ffd93d" strokeWidth={Math.max(1.5, CELL*0.2)}
-                        strokeOpacity={0.85}
-                      />
-                    );
-                  })}
-
-                  {/* Board boundary lines — horizontal */}
-                  {Array.from({length: Math.ceil(displayGrid.h / svgBoardPegs) + 1}, (_,i) => {
-                    const y = i * svgBoardPegs * CELL;
-                    if (y > displayGrid.h * CELL + 1) return null;
-                    return (
-                      <line key={`bh${i}`}
-                        x1={0} y1={y} x2={displayGrid.w*CELL} y2={y}
-                        stroke="#ffd93d" strokeWidth={Math.max(1.5, CELL*0.2)}
-                        strokeOpacity={0.85}
-                      />
-                    );
-                  })}
-
-                  {/* Board number labels */}
-                  {Array.from({length: Math.ceil(displayGrid.h / svgBoardPegs)}, (_,row) =>
-                    Array.from({length: Math.ceil(displayGrid.w / svgBoardPegs)}, (_,col) => {
-                      const lx = col * svgBoardPegs * CELL + 4;
-                      const ly = row * svgBoardPegs * CELL + Math.max(10, CELL);
-                      const num = row * Math.ceil(displayGrid.w / svgBoardPegs) + col + 1;
-                      return (
-                        <text key={`bl${row}-${col}`}
-                          x={lx} y={ly}
-                          fill="#ffd93d" fontSize={Math.max(8, CELL)}
-                          fontWeight="bold" opacity={0.85}
-                          fontFamily="monospace"
-                        >#{num}</text>
-                      );
-                    })
-                  )}
-                </svg>
-              </div>
+              <ChartView
+                displayGrid={displayGrid}
+                snapToBoard={snapToBoard}
+                CELL={CELL}
+                AXIS={AXIS}
+                svgBoardPegs={svgBoardPegs}
+                brand={BRANDS[brand]}
+                colorStats={colorStats}
+              />
 
               {/* Stats panel */}
               <StatsPanel colorStats={colorStats} totalBeads={totalBeads} beadGrid={beadGrid}
@@ -873,6 +801,167 @@ function StatsPanel({ colorStats, totalBeads, beadGrid, brand, beadMm }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Chart-style display (pixel-art bead chart with axes + swatch legend) ─────
+function ChartView({ displayGrid, snapToBoard, CELL, AXIS, svgBoardPegs, brand, colorStats }) {
+  const w = displayGrid.w, h = displayGrid.h;
+  const svgW = w * CELL + AXIS * 2;
+  const svgH = h * CELL + AXIS * 2;
+  const axisFont = Math.max(7, Math.min(10, CELL * 0.55));
+  const codeFont = Math.max(6, Math.min(10, CELL * 0.5));
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {/* Title bar — project name + dimensions */}
+      <div style={{
+        display:"flex", justifyContent:"space-between", alignItems:"baseline",
+        padding:"0 4px 10px", borderBottom:"1px solid #1e1e2e", marginBottom:12,
+      }}>
+        <div style={{
+          fontSize:18, fontWeight:900, color:"#fffffe", letterSpacing:1,
+          fontFamily:"'Courier New', monospace",
+        }}>
+          {brand.name} · 拼豆图纸
+        </div>
+        <div style={{ fontSize:18, color:"#56526e", fontWeight:700, letterSpacing:2 }}>
+          {w}×{h}
+        </div>
+      </div>
+
+      {/* Grid container — white background, scrollable */}
+      <div style={{
+        background:"#fafafa", borderRadius:12, padding:14,
+        overflow:"auto", border:"1px solid #1e1e2e",
+      }}>
+        <svg width={svgW} height={svgH} style={{ display:"block" }}>
+          <g transform={`translate(${AXIS},${AXIS})`}>
+            {/* Padding area (empty board space) when snapped */}
+            {snapToBoard && displayGrid.origW && (
+              <>
+                <rect x={displayGrid.origW * CELL} y={0}
+                  width={(w - displayGrid.origW) * CELL} height={h * CELL}
+                  fill="#eeeeee" />
+                <rect x={0} y={displayGrid.origH * CELL}
+                  width={w * CELL} height={(h - displayGrid.origH) * CELL}
+                  fill="#eeeeee" />
+              </>
+            )}
+
+            {/* Empty cells get a light fill so the chart reads as a sheet */}
+            {displayGrid.grid.map((row, y) => row.map((cell, x) => (
+              !cell ? (
+                <rect key={`e${x}-${y}`} x={x * CELL} y={y * CELL}
+                  width={CELL} height={CELL} fill="#f4f4f4" />
+              ) : null
+            )))}
+
+            {/* Beads as squares with color-code text */}
+            {displayGrid.grid.map((row, y) => row.map((cell, x) => cell ? (
+              <g key={`c${x}-${y}`}>
+                <rect x={x * CELL} y={y * CELL} width={CELL} height={CELL}
+                  fill={cell.hex} />
+                {CELL >= 12 && (
+                  <text x={x * CELL + CELL / 2} y={y * CELL + CELL / 2 + codeFont * 0.35}
+                    textAnchor="middle" fontSize={codeFont} fontFamily="monospace"
+                    fontWeight="bold"
+                    fill={isLight(cell.hex) ? "#333" : "#fff"}>
+                    {shortCode(cell)}
+                  </text>
+                )}
+              </g>
+            ) : null))}
+
+            {/* Fine grid lines */}
+            {Array.from({ length: h + 1 }, (_, i) => (
+              <line key={`gh${i}`} x1={0} y1={i * CELL} x2={w * CELL} y2={i * CELL}
+                stroke="#cccccc" strokeWidth={0.5} />
+            ))}
+            {Array.from({ length: w + 1 }, (_, i) => (
+              <line key={`gv${i}`} x1={i * CELL} y1={0} x2={i * CELL} y2={h * CELL}
+                stroke="#cccccc" strokeWidth={0.5} />
+            ))}
+
+            {/* Board boundary lines — darker */}
+            {Array.from({ length: Math.ceil(w / svgBoardPegs) + 1 }, (_, i) => {
+              const x = i * svgBoardPegs * CELL;
+              if (x > w * CELL + 1) return null;
+              return (
+                <line key={`bv${i}`} x1={x} y1={0} x2={x} y2={h * CELL}
+                  stroke="#666666" strokeWidth={1.5} />
+              );
+            })}
+            {Array.from({ length: Math.ceil(h / svgBoardPegs) + 1 }, (_, i) => {
+              const y = i * svgBoardPegs * CELL;
+              if (y > h * CELL + 1) return null;
+              return (
+                <line key={`bh${i}`} x1={0} y1={y} x2={w * CELL} y2={y}
+                  stroke="#666666" strokeWidth={1.5} />
+              );
+            })}
+
+            {/* Outer frame */}
+            <rect x={0} y={0} width={w * CELL} height={h * CELL}
+              fill="none" stroke="#333" strokeWidth={1} />
+          </g>
+
+          {/* Column numbers — top (1 → w) and bottom (w → 1) */}
+          {Array.from({ length: w }, (_, i) => (
+            <g key={`cn${i}`}>
+              <text x={AXIS + i * CELL + CELL / 2} y={AXIS - 5}
+                textAnchor="middle" fontSize={axisFont} fill="#888"
+                fontFamily="monospace">{i + 1}</text>
+              <text x={AXIS + i * CELL + CELL / 2} y={AXIS + h * CELL + axisFont + 4}
+                textAnchor="middle" fontSize={axisFont} fill="#888"
+                fontFamily="monospace">{w - i}</text>
+            </g>
+          ))}
+
+          {/* Row numbers — left (1 → h going down) and right (h → 1 going down) */}
+          {Array.from({ length: h }, (_, i) => (
+            <g key={`rn${i}`}>
+              <text x={AXIS - 5} y={AXIS + i * CELL + CELL / 2 + axisFont * 0.35}
+                textAnchor="end" fontSize={axisFont} fill="#888"
+                fontFamily="monospace">{i + 1}</text>
+              <text x={AXIS + w * CELL + 5} y={AXIS + i * CELL + CELL / 2 + axisFont * 0.35}
+                textAnchor="start" fontSize={axisFont} fill="#888"
+                fontFamily="monospace">{h - i}</text>
+            </g>
+          ))}
+        </svg>
+      </div>
+
+      {/* Swatch legend — square color blocks with code label + count under each */}
+      <div style={{ marginTop: 16 }}>
+        <div style={{
+          display:"grid",
+          gridTemplateColumns:"repeat(auto-fill, minmax(76px, 1fr))",
+          gap:10,
+        }}>
+          {colorStats.map(({ color, count }) => (
+            <div key={color.id} style={{
+              display:"flex", flexDirection:"column", alignItems:"center", gap:4,
+            }}>
+              <div style={{
+                width:"100%", aspectRatio:"1 / 1", borderRadius:8,
+                background: color.hex,
+                border: "1px solid rgba(0,0,0,.15)",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontFamily:"monospace", fontWeight:900,
+                fontSize: 18, color: isLight(color.hex) ? "#222" : "#fff",
+                boxShadow:"0 1px 2px rgba(0,0,0,.4) inset",
+              }}>
+                {color.id}
+              </div>
+              <div style={{ fontSize:13, color:"#a7a9be", fontWeight:700 }}>
+                {count}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
